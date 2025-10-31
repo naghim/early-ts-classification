@@ -1,0 +1,12 @@
+[project]
+name = "idosorok"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.7",
+    "numba>=0.62.1",
+    "seaborn>=0.13.2",
+    "sktime>=0.39.0",
+]
