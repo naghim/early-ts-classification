@@ -3,6 +3,9 @@
 import warnings
 import numpy as np
 
+from scipy.io import arff
+import os
+
 
 def normalize_input(X, y, name="test"):
     """Ensure input is a 2D numpy array of shape (n_samples, n_timesteps)"""
@@ -36,6 +39,27 @@ def normalize_input(X, y, name="test"):
                 f"Ensure X_{name} is shaped (n_samples, n_timesteps) and y_{name} has length n_samples."
             )
 
+    return X, y
+
+
+def load_arff_dataset(filepath):
+    """Load a .arff file and return data and labels as numpy arrays."""
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError(f"File not found: {filepath}")
+    data, meta = arff.loadarff(filepath)
+    import pandas as pd
+    df = pd.DataFrame(data)
+    # Assume the class label is the last column
+    X = df.iloc[:, :-1].values.astype(np.float32)
+    y = df.iloc[:, -1].values
+    # If labels are bytes, decode them
+    if y.dtype == object and isinstance(y[0], bytes):
+        y = np.array([label.decode() for label in y])
+    # Try to convert labels to int if possible
+    try:
+        y = y.astype(int)
+    except Exception:
+        pass
     return X, y
 
 

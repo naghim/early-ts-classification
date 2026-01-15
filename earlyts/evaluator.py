@@ -41,7 +41,7 @@ class EarlyClassificationEvaluator:
         print("\n=== Evaluating Models ===")
         for model_name, model in self.models.items():
             print(f"\nEvaluating {model_name}...")
-            results = self._evaluate_model(model, X_test, y_test, model_name)
+            results = self._evaluate_model(model, X_test, y_test)
             self.results[model_name] = results
         
         return self.results
@@ -51,6 +51,7 @@ class EarlyClassificationEvaluator:
         results = {}
         X_test, y_test = normalize_input(X_test, y_test, name="test")
 
+        from sklearn.metrics import confusion_matrix
         for p in model.percentages:
             # Get predictions and probabilities
             predictions, confidences = model.predict(X_test, p)
@@ -60,6 +61,7 @@ class EarlyClassificationEvaluator:
             accuracy = accuracy_score(y_test, predictions)
             brier_score = self._brier_score(y_test, probabilities)
             ece = self._expected_calibration_error(y_test, probabilities, confidences)
+            cm = confusion_matrix(y_test, predictions)
             
             # Store results
             results[p] = {
@@ -69,17 +71,26 @@ class EarlyClassificationEvaluator:
                 'mean_confidence': np.mean(confidences),
                 'predictions': predictions,
                 'confidences': confidences,
-                'probabilities': probabilities
+                'probabilities': probabilities,
+                'confusion_matrix': cm
             }
             
             print(f"  {p}% - Accuracy: {accuracy:.3f}, ECE: {ece:.3f}")
+            print("    Confusion matrix:")
+            print(cm)
         
         return results
     
     def _brier_score(self, y_true, probabilities):
         """Calculate Brier score for probability calibration"""
         n_classes = probabilities.shape[1]
-        y_true_onehot = np.eye(n_classes)[y_true]
+        # Ensure y_true is integer-encoded for indexing
+        if not np.issubdtype(y_true.dtype, np.integer):
+            # Map unique labels to integers
+            _, y_true_int = np.unique(y_true, return_inverse=True)
+        else:
+            y_true_int = y_true
+        y_true_onehot = np.eye(n_classes)[y_true_int]
         return np.mean(np.sum((probabilities - y_true_onehot) ** 2, axis=1))
     
     def _expected_calibration_error(self, y_true, probabilities, confidences, n_bins=10):
