@@ -75,26 +75,25 @@ class EarlyClassificationEvaluator:
                 'confusion_matrix': cm
             }
             
-            print(f"  {p}% - Accuracy: {accuracy:.3f}, ECE: {ece:.3f}")
-            print("    Confusion matrix:")
-            print(cm)
+            #print(f"  {p}% - Accuracy: {accuracy:.3f}, ECE: {ece:.3f}")
+            #print("    Confusion matrix:")
+            #print(cm)
         
         return results
     
     def _brier_score(self, y_true, probabilities):
         """Calculate Brier score for probability calibration"""
         n_classes = probabilities.shape[1]
-        # Ensure y_true is integer-encoded for indexing
-        if not np.issubdtype(y_true.dtype, np.integer):
-            # Map unique labels to integers
-            _, y_true_int = np.unique(y_true, return_inverse=True)
-        else:
-            y_true_int = y_true
+        # Always map labels to 0-indexed integers to handle both 0-indexed and 1-indexed labels
+        _, y_true_int = np.unique(y_true, return_inverse=True)
         y_true_onehot = np.eye(n_classes)[y_true_int]
         return np.mean(np.sum((probabilities - y_true_onehot) ** 2, axis=1))
     
     def _expected_calibration_error(self, y_true, probabilities, confidences, n_bins=10):
         """Calculate Expected Calibration Error"""
+        # Map labels to 0-indexed integers to handle both 0-indexed and 1-indexed labels
+        _, y_true_int = np.unique(y_true, return_inverse=True)
+        
         bin_boundaries = np.linspace(0, 1, n_bins + 1)
         bin_lowers = bin_boundaries[:-1]
         bin_uppers = bin_boundaries[1:]
@@ -105,7 +104,7 @@ class EarlyClassificationEvaluator:
             prop_in_bin = np.mean(in_bin)
             
             if prop_in_bin > 0:
-                accuracy_in_bin = np.mean(y_true[in_bin] == np.argmax(probabilities[in_bin], axis=1))
+                accuracy_in_bin = np.mean(y_true_int[in_bin] == np.argmax(probabilities[in_bin], axis=1))
                 avg_confidence_in_bin = np.mean(confidences[in_bin])
                 ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
         
@@ -130,8 +129,8 @@ class EarlyClassificationEvaluator:
                 })
         
         summary_df = pd.DataFrame(summary_data)
-        summary_df.to_csv(filename, index=False)
-        print(f"\nResults saved to {filename}")
+        # summary_df.to_csv(filename, index=False)
+        # print(f"\nResults saved to {filename}")
         return summary_df
     
     def plot_results(self):

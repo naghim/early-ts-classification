@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "arff>=0.9",
     "matplotlib>=3.10.7",
     "numba>=0.62.1",
     "seaborn>=0.13.2",
     "sktime>=0.39.0",
+    "torch>=2.10.0",
 ]
