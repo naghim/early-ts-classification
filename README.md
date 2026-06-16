@@ -1,6 +1,6 @@
 # Early Time Series Classification
 
-Early classification of time series using ROCKET variants with calibrated confidence estimation.
+Early classification of time series using ROCKET variants with and without calibrated confidence estimation.
 
 ## Setup
 
@@ -26,8 +26,7 @@ model = EarlyTimeSeriesClassifier(rocket_variant='minirocket', calibrate=True)
 model.fit(X_train, y_train, percentages=[20, 50, 100])
 
 # Predict at 50% observation
-predictions, confidences = ű
-.predict(X_test, percentage=50)
+predictions, confidences = model.predict(X_test, percentage=50)
 
 # Evaluate multiple models
 evaluator = EarlyClassificationEvaluator()
