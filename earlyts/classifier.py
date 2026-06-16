@@ -9,8 +9,6 @@ from sktime.datatypes._panel._convert import from_2d_array_to_nested
 
 from .utils import normalize_input
 
-USE_RANDOM_INTERVALS = False
-
 
 class EarlyTimeSeriesClassifier:
     """
@@ -102,15 +100,7 @@ class EarlyTimeSeriesClassifier:
         return self
     
     def _get_partial_series(self, X, percentage):
-        """Extract first n% of each time series"""
-        # TODO: Is it worth getting random intervals instead of the "first n%"?
-        if USE_RANDOM_INTERVALS:
-            n_timesteps = int(X.shape[1] * percentage / 100)
-            start_idx = np.random.randint(0, X.shape[1] - n_timesteps + 1)
-            print(f"    Using random interval from {start_idx} to {start_idx + n_timesteps} out of {X.shape[1]}")
-            return X[:, start_idx:start_idx + n_timesteps]
-
-        n_timesteps = int(X.shape[1] * percentage / 100)
+        n_timesteps = max(1, int(X.shape[1] * percentage / 100))
         print(f"    Using first {n_timesteps} timesteps out of {X.shape[1]}")
         return X[:, :n_timesteps]
     
@@ -133,11 +123,15 @@ class EarlyTimeSeriesClassifier:
         if self.calibrate and percentage in self.calibrators:
             return self.calibrators[percentage].predict_proba(X_scaled)
         else:
-            # Convert decision function to probabilities
             classifier = self.classifiers[percentage]
             decision_scores = classifier.decision_function(X_scaled)
 
-            # Softmax conversion
+            if decision_scores.ndim == 1:
+                # Binary: sigmoid instead of softmax
+                prob_pos = 1 / (1 + np.exp(-decision_scores))
+                return np.column_stack([1 - prob_pos, prob_pos])
+
+            # Multiclass: softmax
             exp_scores = np.exp(decision_scores - np.max(decision_scores, axis=1, keepdims=True))
             return exp_scores / np.sum(exp_scores, axis=1, keepdims=True)
     

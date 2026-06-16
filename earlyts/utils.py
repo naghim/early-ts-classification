@@ -7,6 +7,22 @@ from scipy.io import arff
 import os
 
 
+def fill_missing_series_values(X):
+    """Fill missing time-series values without leaving NaNs for estimators."""
+    if not np.isnan(X).any():
+        return X
+
+    import pandas as pd
+
+    return (
+        pd.DataFrame(X)
+        .ffill(axis=1)
+        .bfill(axis=1)
+        .fillna(0.0)
+        .to_numpy(dtype=np.float32)
+    )
+
+
 def normalize_input(X, y, name="test"):
     """Ensure input is a 2D numpy array of shape (n_samples, n_timesteps)"""
     X = np.asarray(X)
@@ -51,6 +67,15 @@ def load_arff_dataset(filepath):
     df = pd.DataFrame(data)
     # Assume the class label is the last column
     X = df.iloc[:, :-1].values.astype(np.float32)
+    if np.isnan(X).any():
+        n_missing = int(np.isnan(X).sum())
+        print(f"Filling {n_missing} missing time-series values in {os.path.basename(filepath)}")
+        X = fill_missing_series_values(X)
+    if not np.isfinite(X).all():
+        raise ValueError(
+            f"Non-finite values remain after loading {filepath}. "
+            "Check for infinities or values outside float32 range."
+        )
     y = df.iloc[:, -1].values
     # If labels are bytes, decode them
     if y.dtype == object and isinstance(y[0], bytes):
@@ -60,6 +85,15 @@ def load_arff_dataset(filepath):
         y = y.astype(int)
     except Exception:
         pass
+    # Normalize target indices: convert 1-indexed to 0-indexed if needed
+    try:
+        y_numeric = y.astype(int)
+        if y_numeric.min() == 1 and 0 not in y_numeric:
+            print('Normalizing labels from 1-indexed to 0-indexed')
+            y = (y_numeric - 1)
+    except (ValueError, TypeError):
+        # Labels are not numeric, leave as-is
+        print('Labels are non-numeric, leaving as-is')
     return X, y
 
 

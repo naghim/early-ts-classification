@@ -1,14 +1,78 @@
 """Evaluation and benchmarking for early classification models"""
 
+import os
 import random
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score
 from sklearn.calibration import calibration_curve
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from .classifier import EarlyTimeSeriesClassifier
 from .utils import normalize_input
+
+
+def _evaluate_model_worker(args):
+    """Worker function for parallel model evaluation"""
+    model_name, model, X_test, y_test, percentages = args
+    
+    results = {}
+    X_test, y_test = normalize_input(X_test, y_test, name="test")
+
+    from sklearn.metrics import confusion_matrix
+    for p in percentages:
+        # Get predictions and probabilities
+        predictions, confidences = model.predict(X_test, p)
+        probabilities = model.predict_probabilities(X_test, p)
+        
+        # Calculate metrics
+        accuracy = accuracy_score(y_test, predictions)
+        brier_score = _brier_score_static(y_test, probabilities)
+        ece = _expected_calibration_error_static(y_test, probabilities, confidences)
+        cm = confusion_matrix(y_test, predictions)
+        
+        # Store results
+        results[p] = {
+            'accuracy': accuracy,
+            'brier_score': brier_score,
+            'ece': ece,
+            'mean_confidence': np.mean(confidences),
+            'predictions': predictions,
+            'confidences': confidences,
+            'probabilities': probabilities,
+            'confusion_matrix': cm
+        }
+    
+    return model_name, results
+
+
+def _brier_score_static(y_true, probabilities):
+    """Calculate Brier score for probability calibration (static version for multiprocessing)"""
+    n_classes = probabilities.shape[1]
+    _, y_true_int = np.unique(y_true, return_inverse=True)
+    y_true_onehot = np.eye(n_classes)[y_true_int]
+    return np.mean(np.sum((probabilities - y_true_onehot) ** 2, axis=1))
+
+
+def _expected_calibration_error_static(y_true, probabilities, confidences, n_bins=10):
+    """Calculate Expected Calibration Error (static version for multiprocessing)"""
+    _, y_true_int = np.unique(y_true, return_inverse=True)
+    
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_boundaries[:-1]
+    bin_uppers = bin_boundaries[1:]
+    
+    ece = 0
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        in_bin = (confidences >= bin_lower) & (confidences < bin_upper)
+        prop_in_bin = np.mean(in_bin)
+        
+        if prop_in_bin > 0:
+            accuracy_in_bin = np.mean(y_true_int[in_bin] == np.argmax(probabilities[in_bin], axis=1))
+            avg_confidence_in_bin = np.mean(confidences[in_bin])
+            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+    
+    return ece
 
 
 class EarlyClassificationEvaluator:
@@ -16,10 +80,17 @@ class EarlyClassificationEvaluator:
     Evaluator class to evaluate and compare multiple early classification models
     """
     
-    def __init__(self):
+    def __init__(self, n_jobs=None):
+        """
+        Initialize the evaluator.
+        
+        Parameters:
+        - n_jobs: Number of parallel processes to use. If None, uses os.cpu_count().
+        """
         self.models = {}
         self.results = {}
         self.percentages = None
+        self.n_jobs = n_jobs if n_jobs is not None else 1#os.cpu_count()
     
     def add_model(self, name, model):
         """Add a trained model to the evaluator"""
@@ -27,7 +98,7 @@ class EarlyClassificationEvaluator:
         return self
     
     def evaluate(self, X_test, y_test, percentages=None):
-        """Evaluate all added models on test data"""
+        """Evaluate all added models on test data using parallel processing"""
         if percentages is None:
             # Use percentages from first model if available
             if self.models:
@@ -38,11 +109,39 @@ class EarlyClassificationEvaluator:
         
         self.percentages = percentages
         
-        print("\n=== Evaluating Models ===")
-        for model_name, model in self.models.items():
-            print(f"\nEvaluating {model_name}...")
-            results = self._evaluate_model(model, X_test, y_test)
-            self.results[model_name] = results
+        print(f"\n=== Evaluating Models (using {self.n_jobs} processes) ===")
+        
+        # Prepare arguments for parallel processing
+        eval_args = [
+            (model_name, model, X_test, y_test, percentages)
+            for model_name, model in self.models.items()
+        ]
+        
+        if self.n_jobs == 1:
+            # Fast path: run in-process (avoids pickling, needed for PyTorch models)
+            for args in eval_args:
+                try:
+                    name, results = _evaluate_model_worker(args)
+                    self.results[name] = results
+                    print(f"  ✓ {name} evaluated")
+                except Exception as e:
+                    print(f"  ✗ {args[0]} failed: {e}")
+        else:
+            # Use ProcessPoolExecutor for parallel evaluation
+            with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
+                futures = {
+                    executor.submit(_evaluate_model_worker, args): args[0]
+                    for args in eval_args
+                }
+                
+                for future in as_completed(futures):
+                    model_name = futures[future]
+                    try:
+                        name, results = future.result()
+                        self.results[name] = results
+                        print(f"  ✓ {name} evaluated")
+                    except Exception as e:
+                        print(f"  ✗ {model_name} failed: {e}")
         
         return self.results
     
@@ -74,10 +173,6 @@ class EarlyClassificationEvaluator:
                 'probabilities': probabilities,
                 'confusion_matrix': cm
             }
-            
-            #print(f"  {p}% - Accuracy: {accuracy:.3f}, ECE: {ece:.3f}")
-            #print("    Confusion matrix:")
-            #print(cm)
         
         return results
     
@@ -129,74 +224,5 @@ class EarlyClassificationEvaluator:
                 })
         
         summary_df = pd.DataFrame(summary_data)
-        # summary_df.to_csv(filename, index=False)
-        # print(f"\nResults saved to {filename}")
+
         return summary_df
-    
-    def plot_results(self):
-        """Create comprehensive visualization of results"""
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        
-        # Plot 1: Accuracy vs Observation Percentage
-        self._plot_accuracy_curve(axes[0, 0])
-        
-        # Plot 2: Calibration Error vs Observation Percentage
-        self._plot_calibration_curve(axes[0, 1])
-        
-        # Plot 3: Reliability Diagram at 30% observation
-        self._plot_reliability_diagram(axes[1, 0], percentage=30)
-        
-        # Plot 4: Reliability Diagram at 70% observation
-        self._plot_reliability_diagram(axes[1, 1], percentage=70)
-        
-        plt.tight_layout()
-        plt.show()
-    
-    def _plot_accuracy_curve(self, ax):
-        """Plot accuracy vs observation percentage for all variants"""
-        for model_name, results in self.results.items():
-            accuracies = [results[p]['accuracy'] for p in self.percentages]
-            linestyle = '-' if 'calibrated' in model_name else '--'
-            label = model_name.replace('_calibrated', ' (calibrated)').replace('_uncalibrated', ' (uncalibrated)')
-            ax.plot(self.percentages, accuracies, linestyle=linestyle, label=label, marker='o')
-        
-        ax.set_xlabel('Observation Percentage')
-        ax.set_ylabel('Accuracy')
-        ax.set_title('Accuracy vs Observation Percentage')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, alpha=0.3)
-    
-    def _plot_calibration_curve(self, ax):
-        """Plot calibration error vs observation percentage"""
-        for model_name, results in self.results.items():
-            ece_values = [results[p]['ece'] for p in self.percentages]
-            linestyle = '-' if 'calibrated' in model_name else '--'
-            label = model_name.replace('_calibrated', ' (calibrated)').replace('_uncalibrated', ' (uncalibrated)')
-            ax.plot(self.percentages, ece_values, linestyle=linestyle, label=label, marker='s')
-        
-        ax.set_xlabel('Observation Percentage')
-        ax.set_ylabel('Expected Calibration Error (ECE)')
-        ax.set_title('Calibration Error vs Observation Percentage')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, alpha=0.3)
-    
-    def _plot_reliability_diagram(self, ax, percentage=50):
-        """Plot reliability diagram for specific observation percentage"""
-        for model_name, results in self.results.items():
-            if percentage in results:
-                y_test = None  # We need the true labels here - you'll need to store them
-                prob_true, prob_pred = calibration_curve(
-                    y_test,  # You'll need to pass true labels here
-                    results[percentage]['confidences'],
-                    n_bins=10
-                )
-                linestyle = '-' if 'calibrated' in model_name else '--'
-                label = model_name.replace('_calibrated', ' (calibrated)').replace('_uncalibrated', ' (uncalibrated)')
-                ax.plot(prob_pred, prob_true, linestyle=linestyle, label=label, marker='o')
-        
-        ax.plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Perfectly calibrated')
-        ax.set_xlabel('Mean Predicted Probability')
-        ax.set_ylabel('Fraction of Positives')
-        ax.set_title(f'Reliability Diagram ({percentage}% observed)')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
