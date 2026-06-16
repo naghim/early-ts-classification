@@ -4,6 +4,7 @@ import os
 import warnings
 import json
 import argparse
+import builtins
 from concurrent.futures import ProcessPoolExecutor, as_completed
 warnings.filterwarnings('ignore')
 
@@ -17,11 +18,18 @@ from earlyts import (
     EarlyTimeSeriesClassifier,
     EarlyClassificationEvaluator,
     EarlyTransformerClassifier,
-    generate_synthetic_ts_data
+    generate_synthetic_ts_data,
+    enable_debug,
 )
 
 N_JOBS = 1
 PERCENTAGES = [20, 40, 60, 80, 100]
+_CLI_QUIET = False
+
+
+def cli_print(*args, **kwargs):
+    if not _CLI_QUIET:
+        builtins.print(*args, **kwargs)
 
 ROCKET_CONFIGS = [
     ('minirocket_calibrated', 'minirocket', True),
@@ -67,9 +75,9 @@ def train_rocket_models(X_train, y_train, percentages, configs, n_jobs=N_JOBS):
             try:
                 name, model = future.result()
                 trained[name] = model
-                print(f"    \u2713 {name} trained")
+                cli_print(f"    \u2713 {name} trained")
             except Exception as e:
-                print(f"    \u2717 {model_name} failed: {e}")
+                cli_print(f"    \u2717 {model_name} failed: {e}")
     return trained
 
 
@@ -92,20 +100,20 @@ def collect_results(evaluator, dataset_name):
 
 def save_csv(results, filename):
     pd.DataFrame(results).to_csv(filename, index=False)
-    print(f"  \u2713 Results saved to {filename}")
+    cli_print(f"  \u2713 Results saved to {filename}")
 
 
 def print_summary(results, title="SUMMARY RESULTS"):
     if not results:
         return
     df = pd.DataFrame(results)
-    print("\n" + "=" * 60)
-    print(title)
-    print("=" * 60)
-    print(f"\nProcessed {df['Dataset'].nunique()} dataset(s)")
-    print(f"Total results: {len(df)} rows")
-    print("\nAverage accuracy by percentage:")
-    print(df.groupby('Percentage')['Accuracy'].mean().round(4))
+    cli_print("\n" + "=" * 60)
+    cli_print(title)
+    cli_print("=" * 60)
+    cli_print(f"\nProcessed {df['Dataset'].nunique()} dataset(s)")
+    cli_print(f"Total results: {len(df)} rows")
+    cli_print("\nAverage accuracy by percentage:")
+    cli_print(df.groupby('Percentage')['Accuracy'].mean().round(4))
 
 
 def get_cached_results(dataset_name, suffix=''):
@@ -116,7 +124,7 @@ def get_cached_results(dataset_name, suffix=''):
             with open(path) as f:
                 return json.load(f)
         except Exception as e:
-            print(f"  Warning: failed to load cache: {e}")
+            cli_print(f"  Warning: failed to load cache: {e}")
     return None
 
 
@@ -127,9 +135,9 @@ def save_cached_results(dataset_name, results, suffix=''):
     try:
         with open(path, 'w') as f:
             json.dump(results, f)
-        print(f"  \u2713 Cached results for {dataset_name}")
+        cli_print(f"  \u2713 Cached results for {dataset_name}")
     except Exception as e:
-        print(f"  Warning: failed to cache: {e}")
+        cli_print(f"  Warning: failed to cache: {e}")
 
 
 def get_datasets(datasets_path):
@@ -150,7 +158,7 @@ def get_datasets(datasets_path):
             pass
         return total
 
-    print(f"Found {len(folders)} datasets, sorting by size...")
+    cli_print(f"Found {len(folders)} datasets, sorting by size...")
     folders.sort(key=folder_size)
     return folders
 
@@ -165,7 +173,7 @@ def process_single_dataset(dataset_name, datasets_path, configs, percentages,
 
     X_train, y_train = load_arff_dataset(train_path)
     X_test, y_test = load_arff_dataset(test_path)
-    print(f"  Train shape: {X_train.shape}, Test shape: {X_test.shape}")
+    cli_print(f"  Train shape: {X_train.shape}, Test shape: {X_test.shape}")
 
     trained = train_rocket_models(X_train, y_train, percentages, configs, n_jobs)
 
@@ -180,13 +188,13 @@ def process_single_dataset(dataset_name, datasets_path, configs, percentages,
 # ── mode functions ──────────────────────────────────────────────────────
 
 def run_synthetic():
-    print("=== Synthetic data demo ===")
+    cli_print("=== Synthetic data demo ===")
     X, y = generate_synthetic_ts_data(n_samples=500, n_timesteps=200, n_classes=3)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42, stratify=y
     )
-    print(f"Training set: {X_train.shape}")
-    print(f"Test set: {X_test.shape}")
+    cli_print(f"Training set: {X_train.shape}")
+    cli_print(f"Test set: {X_test.shape}")
 
     trained = train_rocket_models(X_train, y_train, PERCENTAGES, SYNTHETIC_CONFIGS)
     evaluator = EarlyClassificationEvaluator(n_jobs=N_JOBS)
@@ -202,11 +210,11 @@ def run_synthetic():
 
 def run_single(dataset_name):
     datasets_path = os.path.join(os.getcwd(), 'datasets', 'Univariate')
-    print(f"=== Single dataset: {dataset_name} ===")
+    cli_print(f"=== Single dataset: {dataset_name} ===")
 
     cached = get_cached_results(dataset_name)
     if cached is not None:
-        print(f"  \u2713 Loading cached results for {dataset_name}")
+        cli_print(f"  \u2713 Loading cached results for {dataset_name}")
         df = pd.DataFrame(cached)
         save_csv(df, f'results_{dataset_name.lower()}.csv')
         print_summary(cached)
@@ -227,9 +235,9 @@ def run_all(mode='rocket'):
     cache_suffix = '_transformer' if mode == 'transformer' else ''
     csv_prefix = 'results_transformer' if mode == 'transformer' else 'results'
 
-    print(f"=== All datasets ({mode} mode) ===")
+    cli_print(f"=== All datasets ({mode} mode) ===")
     folders = get_datasets(datasets_path)
-    print(f"Processing {len(folders)} datasets (smallest to largest)")
+    cli_print(f"Processing {len(folders)} datasets (smallest to largest)")
 
     batch_size = 10
     all_results = []
@@ -237,19 +245,19 @@ def run_all(mode='rocket'):
     for i in range(0, len(folders), batch_size):
         batch = folders[i:i + batch_size]
         batch_num = (i // batch_size) + 1
-        print(f"\n{'=' * 80}")
-        print(f"Batch {batch_num} (datasets {i+1} to {min(i+batch_size, len(folders))})")
-        print(f"{'=' * 80}\n")
+        cli_print(f"\n{'=' * 80}")
+        cli_print(f"Batch {batch_num} (datasets {i+1} to {min(i+batch_size, len(folders))})")
+        cli_print(f"{'=' * 80}\n")
 
         batch_results = []
 
         for dataset_name in batch:
             try:
-                print(f"\nProcessing dataset: {dataset_name}")
+                cli_print(f"\nProcessing dataset: {dataset_name}")
 
                 cached = get_cached_results(dataset_name, cache_suffix)
                 if cached is not None:
-                    print(f"  \u2713 Loading cached {mode} results for {dataset_name}")
+                    cli_print(f"  \u2713 Loading cached {mode} results for {dataset_name}")
                     batch_results.extend(cached)
                     continue
 
@@ -259,12 +267,12 @@ def run_all(mode='rocket'):
                     test_path = os.path.join(datasets_path, dataset_name,
                                              f"{dataset_name}_TEST.arff")
                     if not os.path.exists(train_path) or not os.path.exists(test_path):
-                        print(f"  Warning: Missing files for {dataset_name}, skipping...")
+                        cli_print(f"  Warning: Missing files for {dataset_name}, skipping...")
                         continue
 
                     X_train, y_train = load_arff_dataset(train_path)
                     X_test, y_test = load_arff_dataset(test_path)
-                    print(f"  Train shape: {X_train.shape}, Test shape: {X_test.shape}")
+                    cli_print(f"  Train shape: {X_train.shape}, Test shape: {X_test.shape}")
 
                     model = EarlyTransformerClassifier()
                     model.fit(X_train, y_train, percentages=PERCENTAGES)
@@ -281,10 +289,10 @@ def run_all(mode='rocket'):
 
                 save_cached_results(dataset_name, dataset_results, cache_suffix)
                 batch_results.extend(dataset_results)
-                print(f"  \u2713 Successfully processed {dataset_name}")
+                cli_print(f"  \u2713 Successfully processed {dataset_name}")
 
             except Exception as e:
-                print(f"  \u2717 Error processing {dataset_name}: {e}")
+                cli_print(f"  \u2717 Error processing {dataset_name}: {e}")
                 continue
 
         if batch_results:
@@ -310,7 +318,21 @@ def main():
         '--dataset', default='Rock',
         help='Dataset name for --mode single (default: Rock)'
     )
+    parser.add_argument(
+        '--verbose', action='store_true',
+        help='Show internal training and evaluation progress'
+    )
+    parser.add_argument(
+        '--strict-silence', action='store_true',
+        help='Suppress all output (overrides --verbose)'
+    )
     args = parser.parse_args()
+
+    if args.strict_silence:
+        global _CLI_QUIET
+        _CLI_QUIET = True
+    elif args.verbose:
+        enable_debug()
 
     if args.mode == 'synthetic':
         run_synthetic()

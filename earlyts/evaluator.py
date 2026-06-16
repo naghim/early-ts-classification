@@ -8,6 +8,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.calibration import calibration_curve
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from ._debug import debug_print
 from .classifier import EarlyTimeSeriesClassifier
 from .utils import normalize_input
 
@@ -109,7 +110,7 @@ class EarlyClassificationEvaluator:
         
         self.percentages = percentages
         
-        print(f"\n=== Evaluating Models (using {self.n_jobs} processes) ===")
+        debug_print(f"\n=== Evaluating Models (using {self.n_jobs} processes) ===")
         
         # Prepare arguments for parallel processing
         eval_args = [
@@ -123,9 +124,9 @@ class EarlyClassificationEvaluator:
                 try:
                     name, results = _evaluate_model_worker(args)
                     self.results[name] = results
-                    print(f"  ✓ {name} evaluated")
+                    debug_print(f"  ✓ {name} evaluated")
                 except Exception as e:
-                    print(f"  ✗ {args[0]} failed: {e}")
+                    debug_print(f"  ✗ {args[0]} failed: {e}")
         else:
             # Use ProcessPoolExecutor for parallel evaluation
             with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
@@ -139,9 +140,9 @@ class EarlyClassificationEvaluator:
                     try:
                         name, results = future.result()
                         self.results[name] = results
-                        print(f"  ✓ {name} evaluated")
+                        debug_print(f"  ✓ {name} evaluated")
                     except Exception as e:
-                        print(f"  ✗ {model_name} failed: {e}")
+                        debug_print(f"  ✗ {model_name} failed: {e}")
         
         return self.results
     

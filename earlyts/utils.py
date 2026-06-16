@@ -2,6 +2,7 @@
 
 import warnings
 import numpy as np
+from ._debug import debug_print
 
 from scipy.io import arff
 import os
@@ -69,7 +70,7 @@ def load_arff_dataset(filepath):
     X = df.iloc[:, :-1].values.astype(np.float32)
     if np.isnan(X).any():
         n_missing = int(np.isnan(X).sum())
-        print(f"Filling {n_missing} missing time-series values in {os.path.basename(filepath)}")
+        debug_print(f"Filling {n_missing} missing time-series values in {os.path.basename(filepath)}")
         X = fill_missing_series_values(X)
     if not np.isfinite(X).all():
         raise ValueError(
@@ -89,17 +90,17 @@ def load_arff_dataset(filepath):
     try:
         y_numeric = y.astype(int)
         if y_numeric.min() == 1 and 0 not in y_numeric:
-            print('Normalizing labels from 1-indexed to 0-indexed')
+            debug_print('Normalizing labels from 1-indexed to 0-indexed')
             y = (y_numeric - 1)
     except (ValueError, TypeError):
         # Labels are not numeric, leave as-is
-        print('Labels are non-numeric, leaving as-is')
+        debug_print('Labels are non-numeric, leaving as-is')
     return X, y
 
 
 def generate_synthetic_ts_data(n_samples=500, n_timesteps=200, n_classes=3):
     """Generate synthetic time series data for demonstration"""
-    print("Generating synthetic time series data...")
+    debug_print("Generating synthetic time series data...")
     
     X = []
     y = []

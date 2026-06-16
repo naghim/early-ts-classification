@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sktime.transformations.panel.rocket import Rocket, MiniRocket, MultiRocket
 from sktime.datatypes._panel._convert import from_2d_array_to_nested
 
+from ._debug import debug_print
 from .utils import normalize_input
 
 
@@ -52,10 +53,10 @@ class EarlyTimeSeriesClassifier:
         # Normalize inputs and validate shapes early to provide clearer errors
         X_train, y_train = normalize_input(X_train, y_train, name="train")
 
-        print(f"Training {self.rocket_variant} at different observation percentages...")
+        debug_print(f"Training {self.rocket_variant} at different observation percentages...")
         
         for p in percentages:
-            print(f"  {p}%...", end=" ")
+            debug_print(f"  {p}%...", end=" ")
             
             # Get partial time series
             X_partial = self._get_partial_series(X_train, p)
@@ -95,13 +96,13 @@ class EarlyTimeSeriesClassifier:
                 calibrator.fit(X_scaled, y_train)
                 self.calibrators[p] = calibrator
             
-            print("✓")
+            debug_print("✓")
         
         return self
     
     def _get_partial_series(self, X, percentage):
         n_timesteps = max(1, int(X.shape[1] * percentage / 100))
-        print(f"    Using first {n_timesteps} timesteps out of {X.shape[1]}")
+        debug_print(f"    Using first {n_timesteps} timesteps out of {X.shape[1]}")
         return X[:, :n_timesteps]
     
     def predict_probabilities(self, X, percentage):

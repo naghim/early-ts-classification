@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from ._debug import debug_print
 from .utils import normalize_input
 
 
@@ -123,14 +124,14 @@ class EarlyTransformerClassifier:
         self.n_classes = len(unique_labels)
         y_mapped = np.array([self.label_map[l] for l in y_train])
 
-        print(f"Training Transformer at different observation percentages...")
+        debug_print(f"Training Transformer at different observation percentages...")
 
         for p in percentages:
-            print(f"  {p}%...", end=" ", flush=True)
+            debug_print(f"  {p}%...", end=" ", flush=True)
             X_partial = self._get_partial_series(X_train, p)
             model = self._train_single(X_partial, y_mapped)
             self.models[p] = model
-            print("✓")
+            debug_print("✓")
 
         return self
 

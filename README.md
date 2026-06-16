@@ -30,6 +30,14 @@ uv run main.py --mode transformer
 
 Results are saved as CSV files (`results_synthetic.csv`, `results_{dataset}.csv`, or `results_batch_{n}.csv` / `results_transformer_batch_{n}.csv`).
 
+#### Output verbosity:
+
+```bash
+uv run main.py                          # only main progress and results
+uv run main.py --verbose                # also shows internal model training chatter
+uv run main.py --strict-silence         # suppresses everything
+```
+
 ## Library Usage
 
 ```python
